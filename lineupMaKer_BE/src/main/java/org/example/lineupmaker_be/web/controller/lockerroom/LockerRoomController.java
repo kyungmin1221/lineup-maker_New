@@ -1,4 +1,4 @@
-package org.example.lineupmaker_be.web.lockerroom;
+package org.example.lineupmaker_be.web.controller.lockerroom;
 
 import lombok.RequiredArgsConstructor;
 import org.example.lineupmaker_be.service.lockerroom.LockerRoomService;

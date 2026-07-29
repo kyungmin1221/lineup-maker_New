@@ -1,4 +1,4 @@
-package org.example.lineupmaker_be.domain.lineup;
+package org.example.lineupmaker_be.domain.model.lineup;
 
 import java.util.List;
 import java.util.Map;

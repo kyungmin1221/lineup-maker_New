@@ -1,15 +1,12 @@
 package org.example.lineupmaker_be.service.lineup;
 
 import lombok.RequiredArgsConstructor;
-import org.example.lineupmaker_be.domain.lineup.LineUpRepository;
-import org.example.lineupmaker_be.web.lineup.dto.CommentRequest;
-import org.example.lineupmaker_be.web.lineup.dto.CommentResponse;
-import org.example.lineupmaker_be.web.lineup.dto.CreateLineUpRequest;
-import org.example.lineupmaker_be.web.lineup.dto.EditTokenResponse;
-import org.example.lineupmaker_be.web.lineup.dto.LineUpOgSummaryResponse;
-import org.example.lineupmaker_be.web.lineup.dto.LineUpResponse;
-import org.example.lineupmaker_be.web.lineup.dto.LineUpSummaryResponse;
-import org.example.lineupmaker_be.web.lineup.dto.UpdateLineUpRequest;
+import org.example.lineupmaker_be.domain.common.exception.ForbiddenException;
+import org.example.lineupmaker_be.domain.common.exception.NotFoundException;
+import org.example.lineupmaker_be.domain.model.lineup.LineUpEntity;
+import org.example.lineupmaker_be.domain.model.lineup.QuarterJson;
+import org.example.lineupmaker_be.domain.repo.LineUpRepository;
+import org.example.lineupmaker_be.web.dto.lineup.*;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,7 +19,6 @@ import java.util.List;
 public class LineUpService {
 
     private final LineUpRepository lineUpRepository;
-
     // TODO: 라인업 생성
     // 1. LineUpEntity를 새로 만든다 (teamName/squad/quarters는 request 값으로 초기화, ownerId는 deviceId로 설정)
     //    - 엔티티에 세터가 없으므로 정적 팩토리 메서드(예: LineUpEntity.create(...))를 엔티티에 추가하는 걸 고려
@@ -30,7 +26,9 @@ public class LineUpService {
     // 3. 저장된 엔티티를 LineUpResponse로 변환해서 반환
     // 4. 쓰기 메서드이므로 @Transactional 고려
     public LineUpResponse create(String deviceId, CreateLineUpRequest request) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = LineUpEntity.create(deviceId, request.teamName(), request.squad(), request.quarters());
+        LineUpEntity savedLineUp = lineUpRepository.save(lineUpEntity);
+        return LineUpResponse.from(savedLineUp);
     }
 
     // TODO: 라인업 단건 조회 (인증 불필요 - 누구나 조회 가능, ViewPage/CreatePage 진입 시 사용)
@@ -39,14 +37,18 @@ public class LineUpService {
     // 3. 있으면 LineUpResponse로 변환해서 반환
     //    - 주의: editToken 필드는 응답에 절대 포함하지 않는다 (api-spec.md 참고, 소유자가 명시적으로 발급 요청했을 때만 노출)
     public LineUpResponse get(String id) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
+        return LineUpResponse.from(lineUpEntity);
     }
 
     // TODO: OG 메타태그용 요약 조회 (Vercel의 api/lineup-og.js가 호출할 공개 엔드포인트)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
     // 2. teamName만 꺼내서 LineUpOgSummaryResponse로 반환
     public LineUpOgSummaryResponse getSummary(String id) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
+        return new LineUpOgSummaryResponse(lineUpEntity.getTeamName());
     }
 
     // TODO: 부분 수정 (FE 자동저장이 1초 debounce 후 호출)
@@ -58,8 +60,33 @@ public class LineUpService {
     // 4. updatedAt은 @UpdateTimestamp가 자동 갱신하므로 직접 건드릴 필요 없음
     // 5. 저장 후 LineUpResponse로 변환해서 반환
     // 6. 쓰기 메서드이므로 @Transactional 고려
-    public LineUpResponse update(String id, String deviceId, String editToken, UpdateLineUpRequest request) {
-        throw new UnsupportedOperationException("TODO");
+    public LineUpResponse update(String id, String deviceId, String editToken,
+                                 UpdateLineUpRequest request) {
+        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
+
+        // 소유권 검증
+        if (!lineUpEntity.getOwnerId().equals(deviceId)
+                && !lineUpEntity.getEditToken().equals(editToken)) {
+            throw ForbiddenException.notOwnerOrEditToken();
+        }
+
+        // request에서 null이 아닌 필드만 엔티티에 반영
+        if (request.teamName() != null) {
+            lineUpEntity.updateTeamName(request.teamName());
+        }
+        if (request.squad() != null) {
+            lineUpEntity.updateSquad(request.squad());
+        }
+        if (request.quarters() != null) {
+            lineUpEntity.updateQuarters(request.quarters());
+        }
+        if (request.showOpponents() != null) {
+            lineUpEntity.updateShowOpponents(request.showOpponents());
+        }
+
+        LineUpEntity updatedLineUp = lineUpRepository.save(lineUpEntity);
+        return LineUpResponse.from(updatedLineUp);
     }
 
     // TODO: 라인업 삭제 (소유자만 가능)
@@ -67,7 +94,15 @@ public class LineUpService {
     // 2. 소유권 검증 (deviceId == entity.ownerId만 허용, editToken으로는 삭제 불가) - 아니면 ForbiddenException
     // 3. lineUpRepository.delete(entity)
     public void delete(String id, String deviceId) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
+
+        // 소유권 검증
+        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
+            throw ForbiddenException.notOwner();
+        }
+
+        lineUpRepository.delete(lineUpEntity);
     }
 
     // TODO: 내 라인업 목록 조회 (최근 수정순)
@@ -75,7 +110,10 @@ public class LineUpService {
     //    (Spring Data JPA가 메서드 이름으로 자동 구현 - 직접 쿼리 짤 필요 없음)
     // 2. 결과 리스트를 List<LineUpSummaryResponse>(id, teamName, updatedAt)로 변환해서 반환
     public List<LineUpSummaryResponse> findMine(String deviceId) {
-        throw new UnsupportedOperationException("TODO");
+        List<LineUpEntity> lineUps = lineUpRepository.findByOwnerIdOrderByUpdatedAtDesc(deviceId);
+        return lineUps.stream()
+                .map(LineUpSummaryResponse::from)
+                .toList();
     }
 
     // TODO: 편집 토큰 발급/조회 (소유자만 가능)
@@ -104,6 +142,24 @@ public class LineUpService {
     // 3. quarterIdx/commentIdx가 유효 범위인지 확인
     // 4. 해당 인덱스의 댓글을 제외한 새 리스트로 quarters를 교체하고 저장
     public void deleteComment(String id, int quarterIdx, int commentIdx, String deviceId) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
+
+        // 소유권검증
+        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
+            throw ForbiddenException.notOwner();
+        }
+
+        // quarterIdx와 commentIdx 유효성 검증
+        if (quarterIdx < 0 || quarterIdx >= lineUpEntity.getQuarters().size()) {
+            throw new IllegalArgumentException("Invalid quarter index: " + quarterIdx);
+        }
+
+        // 해당 인덱스의 댓글을 제외한 새 리스트로 quarters를 교체하고 저장
+        QuarterJson quarter = lineUpEntity.getQuarters().get(quarterIdx);
+        if (commentIdx < 0 || commentIdx >= quarter.comments().size()) {
+            throw new IllegalArgumentException("Invalid comment index: " + commentIdx);
+        }
     }
+
 }

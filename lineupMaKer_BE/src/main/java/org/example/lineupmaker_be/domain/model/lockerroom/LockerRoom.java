@@ -1,4 +1,4 @@
-package org.example.lineupmaker_be.domain.lineup;
+package org.example.lineupmaker_be.domain.model.lockerroom;
 
 import jakarta.persistence.*;
 import lombok.AccessLevel;
@@ -16,37 +16,27 @@ import java.util.List;
 
 @Entity
 @Table(
-        name = "lineups",
-        indexes = @Index(name = "idx_lineups_owner_id", columnList = "owner_id")
+        name = "locker_rooms",
+        indexes = @Index(name = "idx_locker_rooms_owner_id", columnList = "owner_id")
 )
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class LineUpEntity {
+public class LockerRoom {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(updatable = false, nullable = false)
     private String id;
 
-    @Column(name = "team_name", nullable = false)
-    private String teamName;
+    @Column(nullable = false)
+    private String name;
 
     @Column(name = "owner_id", nullable = false)
     private String ownerId;
 
-    @Column(name = "edit_token")
-    private String editToken;
-
-    @Column(name = "show_opponents", nullable = false)
-    private boolean showOpponents = true;
-
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
-    private List<PlayerJson> squad = new ArrayList<>();
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
-    private List<QuarterJson> quarters = new ArrayList<>();
+    private List<PlayerJson> players = new ArrayList<>();
 
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)

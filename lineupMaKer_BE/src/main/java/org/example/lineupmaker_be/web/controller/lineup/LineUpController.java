@@ -1,4 +1,4 @@
-package org.example.lineupmaker_be.web.lineup;
+package org.example.lineupmaker_be.web.controller.lineup;
 
 import lombok.RequiredArgsConstructor;
 import org.example.lineupmaker_be.service.lineup.LineUpService;
