@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:lineupmaker}
+    username: ${DB_USERNAME:lineupmaker}
+    password: ${DB_PASSWORD:lineupmaker}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # 스키마 자동 업데이트
+    show-sql: true      # 실행되는 SQL 쿼리를 출력
+    # PostgreSQL의 방언(dialect)을 설정하여 배열 같은 고유 기능을 사용할 수 있도록 함
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
