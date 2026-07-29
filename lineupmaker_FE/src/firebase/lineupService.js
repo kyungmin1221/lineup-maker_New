@@ -1,0 +1,136 @@
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  serverTimestamp,
+  collection,
+  query,
+  where,
+  limit,
+  getDocs,
+} from "firebase/firestore";
+import { db } from "./config";
+
+function generateId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function generateToken() {
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function getOrCreateEditToken(id) {
+  const ref = doc(db, 'lineups', id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('Lineup not found');
+  const data = snap.data();
+  if (data.editToken) return data.editToken;
+  const token = generateToken();
+  await updateDoc(ref, { editToken: token });
+  return token;
+}
+
+export async function createLineup(lineupData, ownerId) {
+  const id = generateId();
+  const ref = doc(db, "lineups", id);
+  await setDoc(ref, {
+    ...lineupData,
+    id,
+    ownerId,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return id;
+}
+
+export async function getLineup(id) {
+  const ref = doc(db, "lineups", id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return snap.data();
+}
+
+export async function updateLineup(id, data) {
+  const ref = doc(db, "lineups", id);
+  await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+}
+
+export async function deleteLineup(id) {
+  await deleteDoc(doc(db, "lineups", id));
+}
+
+// 특정 사용자의 라인업 1개의 id를 반환 (없으면 null)
+export async function findMyLineupId(ownerId) {
+  const q = query(
+    collection(db, "lineups"),
+    where("ownerId", "==", ownerId),
+    limit(1)
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  return snap.docs[0].id;
+}
+
+// 특정 사용자의 라인업 목록 반환 (최근 수정 순)
+export async function findMyLineups(ownerId) {
+  const q = query(
+    collection(db, "lineups"),
+    where("ownerId", "==", ownerId)
+  );
+  const snap = await getDocs(q);
+  const items = snap.docs.map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      teamName: data.teamName || '',
+      updatedAt: data.updatedAt?.toMillis?.() ?? 0,
+    };
+  });
+  items.sort((a, b) => b.updatedAt - a.updatedAt);
+  return items;
+}
+
+// 실시간 구독 - unsubscribe 함수 반환
+export function subscribeToLineup(id, callback) {
+  const ref = doc(db, "lineups", id);
+  return onSnapshot(ref, (snap) => {
+    callback(snap.exists() ? snap.data() : null);
+  });
+}
+
+export async function addComment(lineupId, quarterIdx, comment) {
+  const snap = await getDoc(doc(db, "lineups", lineupId));
+  if (!snap.exists()) throw new Error("Lineup not found");
+  const data = snap.data();
+  const quarters = [...data.quarters];
+  quarters[quarterIdx] = {
+    ...quarters[quarterIdx],
+    comments: [
+      ...(quarters[quarterIdx].comments || []),
+      { ...comment, createdAt: Date.now() },
+    ],
+  };
+  await updateDoc(doc(db, "lineups", lineupId), {
+    quarters,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function deleteComment(lineupId, quarterIdx, commentIdx) {
+  const snap = await getDoc(doc(db, "lineups", lineupId));
+  if (!snap.exists()) throw new Error("Lineup not found");
+  const data = snap.data();
+  const quarters = [...data.quarters];
+  const comments = [...(quarters[quarterIdx].comments || [])];
+  comments.splice(commentIdx, 1);
+  quarters[quarterIdx] = { ...quarters[quarterIdx], comments };
+  await updateDoc(doc(db, "lineups", lineupId), {
+    quarters,
+    updatedAt: serverTimestamp(),
+  });
+}
