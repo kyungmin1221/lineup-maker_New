@@ -6,6 +6,7 @@ import org.example.lineupmaker_be.domain.common.exception.NotFoundException;
 import org.example.lineupmaker_be.domain.model.lineup.LineUpEntity;
 import org.example.lineupmaker_be.domain.model.lineup.QuarterJson;
 import org.example.lineupmaker_be.domain.repo.LineUpRepository;
+import org.example.lineupmaker_be.domain.util.EditTokenGenerator;
 import org.example.lineupmaker_be.web.dto.lineup.*;
 import org.springframework.stereotype.Service;
 
@@ -123,7 +124,23 @@ public class LineUpService {
     // 4. 없으면 새 토큰 생성 (SecureRandom 기반 랜덤 hex 문자열 - EditTokenGenerator 유틸을 만들어 사용하는 걸 고려)
     // 5. 생성한 토큰을 엔티티에 반영하고 저장한 뒤 EditTokenResponse로 반환
     public EditTokenResponse getOrCreateEditToken(String id, String deviceId) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
+
+        // 소유권 검증
+        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
+            throw ForbiddenException.notOwner();
+        }
+
+        String editToken = lineUpEntity.getEditToken();
+        if (editToken == null || editToken.isEmpty()) {
+            // 새 토큰 생성
+            editToken = EditTokenGenerator.generateToken();
+            lineUpEntity.updateEditToken(editToken);
+            lineUpRepository.save(lineUpEntity);
+        }
+
+        return new EditTokenResponse(editToken);
     }
 
     // TODO: 댓글 추가 (인증 불필요 - 뷰어도 작성 가능, Comments.jsx와 동일 정책)

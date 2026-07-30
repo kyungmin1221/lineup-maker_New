@@ -84,4 +84,7 @@ public class LineUpEntity {
         this.showOpponents = showOpponents;
     }
 
+    public void updateEditToken(String editToken) {
+        this.editToken = editToken;
+    }
 }
