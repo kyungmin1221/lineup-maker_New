@@ -18,9 +18,9 @@ import {
   deleteComment as removeComment,
   subscribeToLineup,
   getOrCreateEditToken,
-} from '../firebase/lineupService';
-import { findMyLockerRooms } from '../firebase/lockerRoomService';
-import { ensureSignedIn } from '../firebase/auth';
+} from '../api/lineupApi';
+import { findMyLockerRooms, getLockerRoom } from '../api/lockerRoomApi';
+import { getDeviceId } from '../api/deviceId';
 import { trackEvent } from '../lib/analytics';
 import { C, nextId } from '../constants';
 import { share, getTossShareLink } from '@apps-in-toss/web-framework';
@@ -47,41 +47,39 @@ export default function CreatePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const urlToken = searchParams.get('token');
   const [initialData, setInitialData] = useState(null);
   const [loadError, setLoadError] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
-  // 진입 시 로그인 보장 + 라인업 로드
+  // 진입 시 device id 확보 + 라인업 로드
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const uid = await ensureSignedIn();
-        const urlToken = searchParams.get('token');
+        const uid = getDeviceId();
         const data = await getLineup(id);
         if (cancelled) return;
         if (!data) {
           setLoadError(true);
           return;
         }
-        const ownerMatch = !data.ownerId || data.ownerId === uid;
-        const tokenMatch = urlToken && data.editToken && urlToken === data.editToken;
-        // 소유자도 아니고 토큰도 맞지 않으면 진입 차단
-        if (!ownerMatch && !tokenMatch) {
+        const ownerMatch = data.ownerId === uid;
+        // 서버는 editToken을 응답에 내려주지 않으므로(api-spec.md 참고, 보안상 비노출),
+        // 토큰이 실제로 유효한지는 여기서 검증할 수 없다 - URL에 토큰이 있으면 일단 진입을
+        // 허용하고, 실제 저장(PATCH) 시점에 서버가 403으로 최종 판단한다.
+        const hasToken = !!urlToken;
+        // 소유자도 아니고 토큰도 없으면 진입 차단
+        if (!ownerMatch && !hasToken) {
           navigate('/', { replace: true });
           return;
         }
         if (ownerMatch) {
-          // ownerId 없는 옛 라인업은 현재 사용자 것으로 클레임
-          if (!data.ownerId) {
-            await updateLineup(id, { ownerId: uid }).catch(() => {});
-            data.ownerId = uid;
-          }
-          // squad 중복 ID 복구 (있을 경우 Firestore에도 즉시 반영)
+          // squad 중복 ID 복구 (있을 경우 서버에도 즉시 반영)
           const dedup = dedupeSquadIds(data.squad);
           if (dedup.changed) {
             data.squad = dedup.squad;
-            await updateLineup(id, { squad: dedup.squad }).catch(console.error);
+            await updateLineup(id, { squad: dedup.squad }, { deviceId: uid }).catch(console.error);
           }
           setIsOwner(true);
         }
@@ -95,7 +93,7 @@ export default function CreatePage() {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate, searchParams]);
+  }, [id, navigate, urlToken]);
 
   if (loadError) {
     return (
@@ -116,10 +114,18 @@ export default function CreatePage() {
     );
   }
 
-  return <Editor id={id} initialData={initialData} isOwner={isOwner} uid={initialData._uid} />;
+  return (
+    <Editor
+      id={id}
+      initialData={initialData}
+      isOwner={isOwner}
+      uid={initialData._uid}
+      editToken={urlToken}
+    />
+  );
 }
 
-function Editor({ id, initialData, isOwner, uid }) {
+function Editor({ id, initialData, isOwner, uid, editToken }) {
   const [editingTeam, setEditingTeam] = useState(false);
   const [showLockerModal, setShowLockerModal] = useState(false);
   const [showOpponents, setShowOpponents] = useState(initialData?.showOpponents ?? true);
@@ -184,17 +190,23 @@ function Editor({ id, initialData, isOwner, uid }) {
       return;
     }
     const timer = setTimeout(() => {
-      updateLineup(id, { teamName, squad, quarters, showOpponents }).catch(console.error);
+      updateLineup(id, { teamName, squad, quarters, showOpponents }, { deviceId: uid, editToken })
+        .catch((err) => {
+          console.error(err);
+          if (err.status === 403) {
+            showToast('저장 권한이 없어요. 편집 링크를 다시 확인해주세요.');
+          }
+        });
     }, 1000);
     return () => clearTimeout(timer);
-  }, [id, teamName, squad, quarters, showOpponents]);
+  }, [id, teamName, squad, quarters, showOpponents, uid, editToken]);
 
   const isTossApp = window.location.hostname.includes('tossmini.com');
 
   // 편집 링크 공유 (소유자 전용)
   const handleShareEdit = async () => {
     try {
-      const token = await getOrCreateEditToken(id);
+      const token = await getOrCreateEditToken(id, uid);
       if (isTossApp) {
         const tossLink = await getTossShareLink(`intoss://lineupmaker/edit/${id}?token=${token}`, 'https://lineup-maker-tau.vercel.app/og-image.png');
         await share({ message: `${teamName} 라인업 편집\n${tossLink}` });
@@ -232,20 +244,29 @@ function Editor({ id, initialData, isOwner, uid }) {
     }
   };
 
-  const handleImportFromLockerRoom = (room) => {
+  // 목록(findMyLockerRooms)엔 playerCount만 있고 실제 players는 없어서, 선택 시점에 단건 조회로 다시 받아온다
+  const handleImportFromLockerRoom = async (room) => {
     setShowLockerModal(false);
-    if (room.players.length === 0) {
+    let fullRoom;
+    try {
+      fullRoom = await getLockerRoom(room.id);
+    } catch (err) {
+      console.error(err);
+      showToast('라커룸을 불러오지 못했어요.');
+      return;
+    }
+    if (!fullRoom || fullRoom.players.length === 0) {
       showToast('선수가 없는 라커룸이에요.');
       return;
     }
     if (bench.length > 0) {
       const ok = window.confirm(
-        `"${room.name || '라커룸'}"의 선수 ${room.players.length}명을 불러올게요.\n\n확인: 기존 대기선수를 지우고 교체\n취소: 기존 선수 유지하고 추가`
+        `"${fullRoom.name || '라커룸'}"의 선수 ${fullRoom.players.length}명을 불러올게요.\n\n확인: 기존 대기선수를 지우고 교체\n취소: 기존 선수 유지하고 추가`
       );
       if (ok) bench.forEach(p => deleteFromSquad(p.id));
     }
-    room.players.forEach(p => addPlayer(p.name, p.number || '-'));
-    showToast(`${room.players.length}명을 대기선수로 불러왔어요!`);
+    fullRoom.players.forEach(p => addPlayer(p.name, p.number || '-'));
+    showToast(`${fullRoom.players.length}명을 대기선수로 불러왔어요!`);
   };
 
   // 작성자 댓글: 로컬 + Firestore 동시 저장
@@ -257,7 +278,7 @@ function Editor({ id, initialData, isOwner, uid }) {
 
   const handleDeleteComment = async (commentIdx) => {
     deleteComment(commentIdx);
-    await removeComment(id, activeIdx, commentIdx).catch(console.error);
+    await removeComment(id, activeIdx, commentIdx, uid).catch(console.error);
   };
 
   return (
@@ -320,7 +341,7 @@ function Editor({ id, initialData, isOwner, uid }) {
           onToggleOpponents={() => {
             const next = !showOpponents;
             setShowOpponents(next);
-            updateLineup(id, { showOpponents: next }).catch(console.error);
+            updateLineup(id, { showOpponents: next }, { deviceId: uid, editToken }).catch(console.error);
           }}
         />
 
@@ -426,7 +447,7 @@ function LockerRoomModal({ uid, onImport, onClose }) {
                 onMouseLeave={e => e.currentTarget.style.borderColor = C.border}
               >
                 <span>{r.name || '이름 없는 라커룸'}</span>
-                <span style={{ fontSize: 13, color: C.muted, fontWeight: 500 }}>{r.players.length}명</span>
+                <span style={{ fontSize: 13, color: C.muted, fontWeight: 500 }}>{r.playerCount}명</span>
               </button>
             ))}
           </div>

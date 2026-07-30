@@ -9,34 +9,15 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-async function getFirebaseToken(apiKey) {
-  const r = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ returnSecureToken: true }),
-    }
-  );
-  const data = await r.json();
-  return data.idToken ?? null;
-}
-
 async function fetchTeamName(id) {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
-  const apiKey = process.env.VITE_FIREBASE_API_KEY;
-  if (!projectId || !apiKey || !id) return null;
+  const apiBaseUrl = process.env.VITE_API_BASE_URL;
+  if (!apiBaseUrl || !id) return null;
 
   try {
-    const idToken = await getFirebaseToken(apiKey);
-    const headers = idToken ? { Authorization: `Bearer ${idToken}` } : {};
-    const url =
-      `https://firestore.googleapis.com/v1/projects/${projectId}` +
-      `/databases/(default)/documents/lineups/${id}?key=${apiKey}`;
-    const r = await fetch(url, { headers });
+    const r = await fetch(`${apiBaseUrl}/api/v1/lineups/${id}/summary`);
     if (!r.ok) return null;
     const data = await r.json();
-    return data.fields?.teamName?.stringValue ?? null;
+    return data.teamName ?? null;
   } catch (_) {
     return null;
   }

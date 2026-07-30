@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ensureSignedIn } from '../firebase/auth';
-import {
-  createLineup,
-  findMyLineups,
-  getLineup,
-  updateLineup,
-} from '../firebase/lineupService';
+import { getDeviceId } from '../api/deviceId';
+import { createLineup, findMyLineups } from '../api/lineupApi';
 import { makeQuarter, C } from '../constants';
 import { trackEvent } from '../lib/analytics';
 import Onboarding from '../components/Onboarding';
@@ -38,17 +33,7 @@ export default function EntryPage() {
 
     (async () => {
       try {
-        const uid = await ensureSignedIn();
-
-        // ownerId 없는 옛 라인업이 캐시되어 있으면 본인 것으로 클레임
-        const cachedId = localStorage.getItem(CACHE_KEY);
-        if (cachedId) {
-          const cached = await getLineup(cachedId);
-          if (cached && !cached.ownerId) {
-            await updateLineup(cachedId, { ownerId: uid }).catch(() => {});
-          }
-        }
-
+        const uid = getDeviceId();
         const items = await findMyLineups(uid);
 
         if (items.length > 0) {

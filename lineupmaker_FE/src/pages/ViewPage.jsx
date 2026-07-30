@@ -12,8 +12,8 @@ import {
   subscribeToLineup,
   addComment as saveComment,
   deleteComment as removeComment,
-} from '../firebase/lineupService';
-import { ensureSignedIn } from '../firebase/auth';
+} from '../api/lineupApi';
+import { getDeviceId } from '../api/deviceId';
 import { useToast } from '../hooks/useToast';
 import { trackEvent } from '../lib/analytics';
 import { C } from '../constants';
@@ -35,7 +35,7 @@ export default function ViewPage() {
 
   // 현재 사용자 식별 — 본인 라인업이면 댓글 삭제 권한 부여
   useEffect(() => {
-    ensureSignedIn().then(setUid).catch(() => {});
+    setUid(getDeviceId());
   }, []);
 
   // Firestore 실시간 구독 — 라인업·댓글 모두 자동 반영
@@ -95,7 +95,7 @@ export default function ViewPage() {
 
   const handleDeleteComment = async (commentIdx) => {
     try {
-      await removeComment(id, activeIdx, commentIdx);
+      await removeComment(id, activeIdx, commentIdx, uid);
       // onSnapshot이 자동 반영
     } catch {
       showToast('댓글 삭제에 실패했습니다.');

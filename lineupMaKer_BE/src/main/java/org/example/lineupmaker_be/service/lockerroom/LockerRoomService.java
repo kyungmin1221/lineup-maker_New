@@ -29,7 +29,7 @@ public class LockerRoomService {
     }
 
     @Transactional(readOnly = true)
-    public LockerRoomResponse get(String id) {
+    public LockerRoomResponse getLockerRoom(String id) {
         LockerRoom lockerRoom = findEntityOrThrow(id);
         return LockerRoomResponse.from(lockerRoom);
     }

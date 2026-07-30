@@ -23,23 +23,23 @@ public class LockerRoomController {
     // POST /api/v1/locker-rooms - 라커룸 생성
     @PostMapping
     public ResponseEntity<LockerRoomResponse> create(@RequestHeader("X-Device-Id") String deviceId,
-                                                       @RequestBody CreateLockerRoomRequest request) {
+                                                     @RequestBody CreateLockerRoomRequest request) {
         LockerRoomResponse response = lockerRoomService.create(deviceId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     // GET /api/v1/locker-rooms/{id} - 단건 조회 (공개, 헤더 불필요)
     @GetMapping("/{id}")
-    public ResponseEntity<LockerRoomResponse> get(@PathVariable String id) {
-        LockerRoomResponse response = lockerRoomService.get(id);
+    public ResponseEntity<LockerRoomResponse> getLockerRoom(@PathVariable String id) {
+        LockerRoomResponse response = lockerRoomService.getLockerRoom(id);
         return ResponseEntity.ok(response);
     }
 
     // PATCH /api/v1/locker-rooms/{id} - 수정 (소유자만)
     @PatchMapping("/{id}")
     public ResponseEntity<LockerRoomResponse> update(@PathVariable String id,
-                                                      @RequestHeader("X-Device-Id") String deviceId,
-                                                      @RequestBody UpdateLockerRoomRequest request) {
+                                                     @RequestHeader("X-Device-Id") String deviceId,
+                                                     @RequestBody UpdateLockerRoomRequest request) {
         LockerRoomResponse response = lockerRoomService.update(id, deviceId, request);
         return ResponseEntity.ok(response);
     }
@@ -47,7 +47,7 @@ public class LockerRoomController {
     // DELETE /api/v1/locker-rooms/{id} - 삭제 (소유자만)
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id,
-                                        @RequestHeader("X-Device-Id") String deviceId) {
+                                       @RequestHeader("X-Device-Id") String deviceId) {
         lockerRoomService.delete(id, deviceId);
         return ResponseEntity.noContent().build();
     }

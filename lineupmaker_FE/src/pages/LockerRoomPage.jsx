@@ -2,13 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, X, Check } from 'lucide-react';
 import { C, nextId } from '../constants';
-import { getLockerRoom, updateLockerRoom } from '../firebase/lockerRoomService';
+import { getLockerRoom, updateLockerRoom } from '../api/lockerRoomApi';
+import { getDeviceId } from '../api/deviceId';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 
 export default function LockerRoomPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const uid = getDeviceId();
   const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState('');
   const [players, setPlayers] = useState([]);
@@ -34,13 +36,13 @@ export default function LockerRoomPage() {
     if (!loaded) return;
     if (isFirstLoad.current) { isFirstLoad.current = false; return; }
     const timer = setTimeout(() => {
-      updateLockerRoom(id, { players }).catch(console.error);
+      updateLockerRoom(id, { players }, uid).catch(console.error);
     }, 800);
     return () => clearTimeout(timer);
-  }, [id, players, loaded]);
+  }, [id, players, loaded, uid]);
 
   const handleNameBlur = () => {
-    updateLockerRoom(id, { name }).catch(console.error);
+    updateLockerRoom(id, { name }, uid).catch(console.error);
   };
 
   const handleAddPlayer = () => {

@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Trash2, Plus } from 'lucide-react';
-import { ensureSignedIn } from '../firebase/auth';
+import { getDeviceId } from '../api/deviceId';
 import {
   createLineup,
   findMyLineups,
-  getLineup,
-  updateLineup,
   deleteLineup,
-} from '../firebase/lineupService';
+} from '../api/lineupApi';
 import {
   createLockerRoom,
   findMyLockerRooms,
   deleteLockerRoom,
-} from '../firebase/lockerRoomService';
+} from '../api/lockerRoomApi';
 import { makeQuarter, C } from '../constants';
 import { trackEvent } from '../lib/analytics';
 import Onboarding from '../components/Onboarding';
@@ -50,19 +48,8 @@ export default function MyLineupsPage() {
     (async () => {
       let resolvedUid = null;
       try {
-        resolvedUid = await ensureSignedIn();
+        resolvedUid = getDeviceId();
         setUid(resolvedUid);
-
-        // ownerId 없는 옛 라인업이 캐시되어 있으면 본인 것으로 클레임
-        const cachedId = localStorage.getItem(CACHE_KEY);
-        if (cachedId) {
-          const cached = await getLineup(cachedId);
-          if (cached && !cached.ownerId) {
-            await updateLineup(cachedId, { ownerId: resolvedUid }).catch(
-              () => {}
-            );
-          }
-        }
 
         const items = await findMyLineups(resolvedUid);
         setMyLineups(items);
@@ -92,7 +79,7 @@ export default function MyLineupsPage() {
     if (creating) return;
     setCreating(true);
     try {
-      const uid = await ensureSignedIn();
+      const uid = getDeviceId();
       const id = await createLineup(buildEmptyLineup(), uid);
       trackEvent('create_lineup');
       navigate(`/edit/${id}`);
@@ -109,7 +96,7 @@ export default function MyLineupsPage() {
     );
     if (!ok) return;
     try {
-      await deleteLineup(lineup.id);
+      await deleteLineup(lineup.id, uid);
       setMyLineups((prev) => prev.filter((x) => x.id !== lineup.id));
       if (localStorage.getItem(CACHE_KEY) === lineup.id) {
         localStorage.removeItem(CACHE_KEY);
@@ -124,12 +111,12 @@ export default function MyLineupsPage() {
     if (creatingLocker) return;
     setCreatingLocker(true);
     try {
-      const currentUid = uid || (await ensureSignedIn());
+      const currentUid = uid || getDeviceId();
       const id = await createLockerRoom('새 라커룸', currentUid);
       navigate(`/locker-room/${id}`);
     } catch (err) {
       console.error('라커룸 생성 실패:', err);
-      alert('라커룸 생성에 실패했습니다. Firebase 보안 규칙을 확인해주세요.');
+      alert('라커룸 생성에 실패했습니다.');
       setCreatingLocker(false);
     }
   };
@@ -141,7 +128,7 @@ export default function MyLineupsPage() {
     );
     if (!ok) return;
     try {
-      await deleteLockerRoom(room.id);
+      await deleteLockerRoom(room.id, uid);
       setLockerRooms((prev) => prev.filter((x) => x.id !== room.id));
     } catch (err) {
       console.error(err);
@@ -535,7 +522,7 @@ export default function MyLineupsPage() {
                       {room.name || '이름 없는 라커룸'}
                     </span>
                     <span style={{ fontSize: 12, color: C.muted }}>
-                      {room.players.length}명
+                      {room.playerCount}명
                     </span>
                   </div>
                   <div
