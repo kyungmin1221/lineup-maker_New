@@ -45,4 +45,19 @@ public class LockerRoom {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    public static LockerRoom create(String name, String ownerId) {
+        LockerRoom lockerRoom = new LockerRoom();
+        lockerRoom.name = name;
+        lockerRoom.ownerId = ownerId;
+        return lockerRoom;
+    }
+
+    public void updateName(String name) {
+        this.name = name;
+    }
+
+    public void updatePlayers(List<PlayerJson> players) {
+        this.players = players;
+    }
 }
