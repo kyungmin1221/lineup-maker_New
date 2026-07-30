@@ -7,6 +7,7 @@ import java.util.List;
 
 public record CreateLineUpRequest(
     String teamName,
+    String deviceId,
     List<PlayerJson> squad,
     List<QuarterJson> quarters
 ) {

@@ -1,13 +1,8 @@
 package org.example.lineupmaker_be.service.lockerroom;
 
 import lombok.RequiredArgsConstructor;
-import org.example.lineupmaker_be.domain.lockerroom.LockerRoomRepository;
-import org.example.lineupmaker_be.web.lockerroom.dto.CreateLockerRoomRequest;
-import org.example.lineupmaker_be.web.lockerroom.dto.LockerRoomResponse;
-import org.example.lineupmaker_be.web.lockerroom.dto.LockerRoomSummaryResponse;
-import org.example.lineupmaker_be.web.lockerroom.dto.UpdateLockerRoomRequest;
+import org.example.lineupmaker_be.domain.repo.LockerRoomRepository;
 import org.springframework.stereotype.Service;
-
 import java.util.List;
 
 // 규칙: domain에만 의존한다. web(Controller)을 참조하지 않는다.

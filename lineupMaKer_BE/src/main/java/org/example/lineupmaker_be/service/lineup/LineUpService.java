@@ -33,9 +33,9 @@ public class LineUpService {
     // 3. 저장된 엔티티를 LineUpResponse로 변환해서 반환
     // 4. 쓰기 메서드이므로 @Transactional 고려
     @Transactional
-    public LineUpResponse create(String deviceId, CreateLineUpRequest request) {
+    public LineUpResponse create(CreateLineUpRequest request) {
         LineUpEntity lineUpEntity = LineUpEntity.create(
-                request.teamName(), deviceId, request.squad(), request.quarters()
+                request.teamName(), request.deviceId(), request.squad(), request.quarters()
         );
         LineUpEntity savedLineUp = lineUpRepository.save(lineUpEntity);
         return LineUpResponse.from(savedLineUp);
@@ -47,7 +47,7 @@ public class LineUpService {
     // 2. 없으면 NotFoundException을 던진다 (domain.common.exception에 만들어 사용 - GlobalExceptionHandler가 404로 변환)
     // 3. 있으면 LineUpResponse로 변환해서 반환
     //    - 주의: editToken 필드는 응답에 절대 포함하지 않는다 (api-spec.md 참고, 소유자가 명시적으로 발급 요청했을 때만 노출)
-    public LineUpResponse get(String id) {
+    public LineUpResponse getLineUp(String id) {
         LineUpEntity lineUpEntity = findEntityOrThrow(id);
         return LineUpResponse.from(lineUpEntity);
     }
@@ -72,12 +72,11 @@ public class LineUpService {
     // 5. 저장 후 LineUpResponse로 변환해서 반환
     // 6. 쓰기 메서드이므로 @Transactional 고려
     @Transactional
-    public LineUpResponse update(String id, String deviceId, String editToken,
-                                 UpdateLineUpRequest request) {
+    public LineUpResponse update(String id, UpdateLineUpRequest request) {
         LineUpEntity lineUpEntity = findEntityOrThrow(id);
 
-        boolean isOwner = lineUpEntity.getOwnerId().equals(deviceId);
-        boolean hasValidToken = lineUpEntity.getEditToken() != null && lineUpEntity.getEditToken().equals(editToken);
+        boolean isOwner = lineUpEntity.getOwnerId().equals(request.deviceId());
+        boolean hasValidToken = lineUpEntity.getEditToken() != null && lineUpEntity.getEditToken().equals(request.editToken());
         // 소유권 검증
         if (!isOwner && !hasValidToken) {
             throw ForbiddenException.notOwnerOrEditToken();

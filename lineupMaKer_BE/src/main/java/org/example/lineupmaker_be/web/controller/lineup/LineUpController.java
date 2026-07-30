@@ -2,14 +2,8 @@ package org.example.lineupmaker_be.web.controller.lineup;
 
 import lombok.RequiredArgsConstructor;
 import org.example.lineupmaker_be.service.lineup.LineUpService;
-import org.example.lineupmaker_be.web.lineup.dto.CommentRequest;
-import org.example.lineupmaker_be.web.lineup.dto.CommentResponse;
-import org.example.lineupmaker_be.web.lineup.dto.CreateLineUpRequest;
-import org.example.lineupmaker_be.web.lineup.dto.EditTokenResponse;
-import org.example.lineupmaker_be.web.lineup.dto.LineUpOgSummaryResponse;
-import org.example.lineupmaker_be.web.lineup.dto.LineUpResponse;
-import org.example.lineupmaker_be.web.lineup.dto.LineUpSummaryResponse;
-import org.example.lineupmaker_be.web.lineup.dto.UpdateLineUpRequest;
+import org.example.lineupmaker_be.web.dto.lineup.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -26,76 +20,76 @@ public class LineUpController {
 
     private final LineUpService lineUpService;
 
-    // TODO: POST /api/v1/lineups - 라인업 생성
-    // - X-Device-Id 헤더 필수 (@RequestHeader("X-Device-Id") String deviceId)
-    // - @Valid로 request 검증 (CreateLineUpRequest에 Bean Validation 어노테이션 필요)
-    // - lineUpService.create(deviceId, request) 호출
-    // - 성공 시 201 Created 상태코드로 응답 (ResponseEntity.status(HttpStatus.CREATED).body(...))
+    // POST /api/v1/lineups - 라인업 생성
+    // deviceId는 헤더가 아니라 CreateLineUpRequest 안에 들어있음 (현재 서비스 설계 기준)
     @PostMapping
-    public ResponseEntity<LineUpResponse> create() {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<LineUpResponse> create(@RequestBody CreateLineUpRequest request) {
+        LineUpResponse response = lineUpService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    // TODO: GET /api/v1/lineups/{id} - 단건 조회 (공개, 헤더 불필요)
-    // - lineUpService.get(id) 호출 결과를 그대로 반환 (200 OK)
+    // GET /api/v1/lineups/{id} - 단건 조회 (공개, 헤더 불필요)
     @GetMapping("/{id}")
-    public LineUpResponse get(@PathVariable String id) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<LineUpResponse> get(@PathVariable String id) {
+        LineUpResponse response = lineUpService.getLineUp(id);
+        return ResponseEntity.ok(response);
     }
 
-    // TODO: GET /api/v1/lineups/{id}/summary - OG 메타태그용 요약 조회 (공개)
-    // - lineUpService.getSummary(id) 호출 결과를 그대로 반환
+    // GET /api/v1/lineups/{id}/summary - OG 메타태그용 요약 조회 (공개)
     @GetMapping("/{id}/summary")
-    public LineUpOgSummaryResponse getSummary(@PathVariable String id) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<LineUpOgSummaryResponse> getSummary(@PathVariable String id) {
+        LineUpOgSummaryResponse response = lineUpService.getSummary(id);
+        return ResponseEntity.ok(response);
     }
 
-    // TODO: PATCH /api/v1/lineups/{id} - 부분 수정 (자동저장)
-    // - X-Device-Id, X-Edit-Token 둘 다 required = false - 소유권 검증은 service가 처리
-    // - lineUpService.update(id, deviceId, editToken, request) 호출
+    // PATCH /api/v1/lineups/{id} - 부분 수정 (자동저장)
+    // deviceId/editToken도 헤더가 아니라 UpdateLineUpRequest 안에 들어있음 (현재 서비스 설계 기준)
     @PatchMapping("/{id}")
-    public LineUpResponse update(@PathVariable String id) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<LineUpResponse> update(@PathVariable String id,
+                                                  @RequestBody UpdateLineUpRequest request) {
+        LineUpResponse response = lineUpService.update(id, request);
+        return ResponseEntity.ok(response);
     }
 
-    // TODO: DELETE /api/v1/lineups/{id} - 삭제 (소유자만)
-    // - X-Device-Id 헤더 필수
-    // - lineUpService.delete(id, deviceId) 호출 후 204 No Content 응답
+    // DELETE /api/v1/lineups/{id} - 삭제 (소유자만)
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable String id) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<Void> delete(@PathVariable String id,
+                                        @RequestHeader("X-Device-Id") String deviceId) {
+        lineUpService.delete(id, deviceId);
+        return ResponseEntity.noContent().build();
     }
 
-    // TODO: GET /api/v1/lineups/me - 내 라인업 목록
-    // - X-Device-Id 헤더 필수
-    // - lineUpService.findMine(deviceId) 호출 결과를 그대로 반환
+    // GET /api/v1/lineups/me - 내 라인업 목록
     @GetMapping("/me")
-    public List<LineUpSummaryResponse> findMine() {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<List<LineUpSummaryResponse>> findMine(@RequestHeader("X-Device-Id") String deviceId) {
+        List<LineUpSummaryResponse> response = lineUpService.findMine(deviceId);
+        return ResponseEntity.ok(response);
     }
 
-    // TODO: POST /api/v1/lineups/{id}/edit-token - 편집 토큰 발급/조회 (소유자만)
-    // - X-Device-Id 헤더 필수
-    // - lineUpService.getOrCreateEditToken(id, deviceId) 호출
+    // POST /api/v1/lineups/{id}/edit-token - 편집 토큰 발급/조회 (소유자만)
     @PostMapping("/{id}/edit-token")
-    public EditTokenResponse issueEditToken(@PathVariable String id) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<EditTokenResponse> issueEditToken(@PathVariable String id,
+                                                             @RequestHeader("X-Device-Id") String deviceId) {
+        EditTokenResponse response = lineUpService.getOrCreateEditToken(id, deviceId);
+        return ResponseEntity.ok(response);
     }
 
-    // TODO: POST /api/v1/lineups/{id}/quarters/{quarterIdx}/comments - 댓글 추가 (공개, 헤더 불필요)
-    // - @Valid로 request 검증 (CommentRequest에 name/text 빈 값 방지 어노테이션 필요)
-    // - lineUpService.addComment(id, quarterIdx, request) 호출, 성공 시 201 Created
+    // POST /api/v1/lineups/{id}/quarters/{quarterIdx}/comments - 댓글 추가 (공개, 헤더 불필요)
     @PostMapping("/{id}/quarters/{quarterIdx}/comments")
-    public ResponseEntity<CommentResponse> addComment(@PathVariable String id, @PathVariable int quarterIdx) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<CommentResponse> addComment(@PathVariable String id,
+                                                       @PathVariable int quarterIdx,
+                                                       @RequestBody CommentRequest request) {
+        CommentResponse response = lineUpService.addComment(id, quarterIdx, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
-    // TODO: DELETE /api/v1/lineups/{id}/quarters/{quarterIdx}/comments/{commentIdx} - 댓글 삭제 (소유자만)
-    // - X-Device-Id 헤더 필수
-    // - lineUpService.deleteComment(id, quarterIdx, commentIdx, deviceId) 호출 후 204 No Content 응답
+    // DELETE /api/v1/lineups/{id}/quarters/{quarterIdx}/comments/{commentIdx} - 댓글 삭제 (소유자만)
     @DeleteMapping("/{id}/quarters/{quarterIdx}/comments/{commentIdx}")
-    public ResponseEntity<Void> deleteComment(
-            @PathVariable String id, @PathVariable int quarterIdx, @PathVariable int commentIdx) {
-        throw new UnsupportedOperationException("TODO");
+    public ResponseEntity<Void> deleteComment(@PathVariable String id,
+                                               @PathVariable int quarterIdx,
+                                               @PathVariable int commentIdx,
+                                               @RequestHeader("X-Device-Id") String deviceId) {
+        lineUpService.deleteComment(id, quarterIdx, commentIdx, deviceId);
+        return ResponseEntity.noContent().build();
     }
 }
