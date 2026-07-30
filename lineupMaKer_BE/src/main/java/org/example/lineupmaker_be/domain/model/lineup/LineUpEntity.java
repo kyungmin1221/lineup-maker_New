@@ -44,6 +44,7 @@ public class LineUpEntity {
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<PlayerJson> squad = new ArrayList<>();
 
+    // 쿼터 여러개 (1쿼터,2쿼터 ...n )
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<QuarterJson> quarters = new ArrayList<>();

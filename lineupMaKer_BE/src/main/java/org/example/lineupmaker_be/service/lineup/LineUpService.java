@@ -3,13 +3,16 @@ package org.example.lineupmaker_be.service.lineup;
 import lombok.RequiredArgsConstructor;
 import org.example.lineupmaker_be.domain.common.exception.ForbiddenException;
 import org.example.lineupmaker_be.domain.common.exception.NotFoundException;
+import org.example.lineupmaker_be.domain.model.lineup.CommentJson;
 import org.example.lineupmaker_be.domain.model.lineup.LineUpEntity;
 import org.example.lineupmaker_be.domain.model.lineup.QuarterJson;
 import org.example.lineupmaker_be.domain.repo.LineUpRepository;
 import org.example.lineupmaker_be.domain.util.EditTokenGenerator;
 import org.example.lineupmaker_be.web.dto.lineup.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 // 규칙: domain에만 의존한다. web(Controller)을 참조하지 않는다.
@@ -19,18 +22,25 @@ import java.util.List;
 @RequiredArgsConstructor
 public class LineUpService {
 
+
     private final LineUpRepository lineUpRepository;
+
+
     // TODO: 라인업 생성
     // 1. LineUpEntity를 새로 만든다 (teamName/squad/quarters는 request 값으로 초기화, ownerId는 deviceId로 설정)
     //    - 엔티티에 세터가 없으므로 정적 팩토리 메서드(예: LineUpEntity.create(...))를 엔티티에 추가하는 걸 고려
     // 2. lineUpRepository.save(entity) 호출 (id는 @GeneratedValue(UUID)가 자동 채움)
     // 3. 저장된 엔티티를 LineUpResponse로 변환해서 반환
     // 4. 쓰기 메서드이므로 @Transactional 고려
+    @Transactional
     public LineUpResponse create(String deviceId, CreateLineUpRequest request) {
-        LineUpEntity lineUpEntity = LineUpEntity.create(deviceId, request.teamName(), request.squad(), request.quarters());
+        LineUpEntity lineUpEntity = LineUpEntity.create(
+                request.teamName(), deviceId, request.squad(), request.quarters()
+        );
         LineUpEntity savedLineUp = lineUpRepository.save(lineUpEntity);
         return LineUpResponse.from(savedLineUp);
     }
+
 
     // TODO: 라인업 단건 조회 (인증 불필요 - 누구나 조회 가능, ViewPage/CreatePage 진입 시 사용)
     // 1. lineUpRepository.findById(id) 호출
@@ -38,19 +48,19 @@ public class LineUpService {
     // 3. 있으면 LineUpResponse로 변환해서 반환
     //    - 주의: editToken 필드는 응답에 절대 포함하지 않는다 (api-spec.md 참고, 소유자가 명시적으로 발급 요청했을 때만 노출)
     public LineUpResponse get(String id) {
-        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.lineup(id));
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
         return LineUpResponse.from(lineUpEntity);
     }
+
 
     // TODO: OG 메타태그용 요약 조회 (Vercel의 api/lineup-og.js가 호출할 공개 엔드포인트)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
     // 2. teamName만 꺼내서 LineUpOgSummaryResponse로 반환
     public LineUpOgSummaryResponse getSummary(String id) {
-        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.lineup(id));
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
         return new LineUpOgSummaryResponse(lineUpEntity.getTeamName());
     }
+
 
     // TODO: 부분 수정 (FE 자동저장이 1초 debounce 후 호출)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
@@ -61,14 +71,15 @@ public class LineUpService {
     // 4. updatedAt은 @UpdateTimestamp가 자동 갱신하므로 직접 건드릴 필요 없음
     // 5. 저장 후 LineUpResponse로 변환해서 반환
     // 6. 쓰기 메서드이므로 @Transactional 고려
+    @Transactional
     public LineUpResponse update(String id, String deviceId, String editToken,
                                  UpdateLineUpRequest request) {
-        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.lineup(id));
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
 
+        boolean isOwner = lineUpEntity.getOwnerId().equals(deviceId);
+        boolean hasValidToken = lineUpEntity.getEditToken() != null && lineUpEntity.getEditToken().equals(editToken);
         // 소유권 검증
-        if (!lineUpEntity.getOwnerId().equals(deviceId)
-                && !lineUpEntity.getEditToken().equals(editToken)) {
+        if (!isOwner && !hasValidToken) {
             throw ForbiddenException.notOwnerOrEditToken();
         }
 
@@ -90,21 +101,21 @@ public class LineUpService {
         return LineUpResponse.from(updatedLineUp);
     }
 
+
     // TODO: 라인업 삭제 (소유자만 가능)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
     // 2. 소유권 검증 (deviceId == entity.ownerId만 허용, editToken으로는 삭제 불가) - 아니면 ForbiddenException
     // 3. lineUpRepository.delete(entity)
+    @Transactional
     public void delete(String id, String deviceId) {
-        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.lineup(id));
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
 
         // 소유권 검증
-        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
-            throw ForbiddenException.notOwner();
-        }
+        validateOwner(deviceId, lineUpEntity);
 
         lineUpRepository.delete(lineUpEntity);
     }
+
 
     // TODO: 내 라인업 목록 조회 (최근 수정순)
     // 1. LineUpRepository에 findByOwnerIdOrderByUpdatedAtDesc(String ownerId) 같은 쿼리 메서드를 추가
@@ -117,20 +128,19 @@ public class LineUpService {
                 .toList();
     }
 
+
     // TODO: 편집 토큰 발급/조회 (소유자만 가능)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
     // 2. 소유권 검증 (소유자만 허용)
     // 3. entity.getEditToken()이 이미 있으면 그대로 EditTokenResponse에 담아 반환
     // 4. 없으면 새 토큰 생성 (SecureRandom 기반 랜덤 hex 문자열 - EditTokenGenerator 유틸을 만들어 사용하는 걸 고려)
     // 5. 생성한 토큰을 엔티티에 반영하고 저장한 뒤 EditTokenResponse로 반환
+    @Transactional
     public EditTokenResponse getOrCreateEditToken(String id, String deviceId) {
-        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.lineup(id));
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
 
         // 소유권 검증
-        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
-            throw ForbiddenException.notOwner();
-        }
+        validateOwner(deviceId, lineUpEntity);
 
         String editToken = lineUpEntity.getEditToken();
         if (editToken == null || editToken.isEmpty()) {
@@ -143,40 +153,118 @@ public class LineUpService {
         return new EditTokenResponse(editToken);
     }
 
+
     // TODO: 댓글 추가 (인증 불필요 - 뷰어도 작성 가능, Comments.jsx와 동일 정책)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
     // 2. entity.getQuarters()에서 quarterIdx가 유효 범위인지 확인 (범위 밖이면 예외 - 400 혹은 404 중 선택)
     // 3. 해당 QuarterJson.comments()에 새 CommentJson(name, text, createdAt=현재시각) 추가
     //    - QuarterJson/CommentJson은 record(불변)라 리스트/레코드를 새로 만들어서 quarters 전체를 교체해야 함
     // 4. 저장 후 방금 추가한 댓글을 CommentResponse로 변환해서 반환
+    @Transactional
     public CommentResponse addComment(String id, int quarterIdx, CommentRequest request) {
-        throw new UnsupportedOperationException("TODO");
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
+
+        // quarterIdx 유효성 검증
+        if (quarterIdx < 0 || quarterIdx >= lineUpEntity.getQuarters().size()) {
+            throw new IllegalArgumentException("Invalid quarter index: " + quarterIdx);
+        }
+
+        QuarterJson quarter = lineUpEntity.getQuarters().get(quarterIdx);
+
+        // 새 댓글 생성
+        CommentJson newComment = new CommentJson(
+                request.name(),
+                request.text(),
+                System.currentTimeMillis()
+        );
+
+        // 기존 댓글 리스트에 새 댓글 추가
+        List<CommentJson> updatedComments = new ArrayList<>(quarter.comments());
+        updatedComments.add(newComment);
+
+        // 새로운 QuarterJson 생성
+        QuarterJson updatedQuarter = new QuarterJson(
+                quarter.id(),
+                quarter.label(),
+                quarter.players(),
+                updatedComments,
+                quarter.scenarios(),
+                quarter.formations()
+        );
+
+        // quarters 전체를 새 리스트로 교체
+        List<QuarterJson> updatedQuarters = new java.util.ArrayList<>(lineUpEntity.getQuarters());
+        updatedQuarters.set(quarterIdx, updatedQuarter);
+        lineUpEntity.updateQuarters(updatedQuarters);
+
+        // 저장
+        lineUpRepository.save(lineUpEntity);
+
+        return CommentResponse.from(newComment);
     }
+
 
     // TODO: 댓글 삭제 (소유자만 가능, ViewPage.jsx의 isOwner 정책과 동일)
     // 1. lineUpRepository.findById(id), 없으면 NotFoundException
     // 2. 소유권 검증 (소유자만 허용)
     // 3. quarterIdx/commentIdx가 유효 범위인지 확인
     // 4. 해당 인덱스의 댓글을 제외한 새 리스트로 quarters를 교체하고 저장
+    @Transactional
     public void deleteComment(String id, int quarterIdx, int commentIdx, String deviceId) {
-        LineUpEntity lineUpEntity = lineUpRepository.findById(id)
-                .orElseThrow(() -> NotFoundException.lineup(id));
+        LineUpEntity lineUpEntity = findEntityOrThrow(id);
 
         // 소유권검증
-        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
-            throw ForbiddenException.notOwner();
-        }
+        validateOwner(deviceId, lineUpEntity);
 
         // quarterIdx와 commentIdx 유효성 검증
         if (quarterIdx < 0 || quarterIdx >= lineUpEntity.getQuarters().size()) {
             throw new IllegalArgumentException("Invalid quarter index: " + quarterIdx);
         }
 
-        // 해당 인덱스의 댓글을 제외한 새 리스트로 quarters를 교체하고 저장
         QuarterJson quarter = lineUpEntity.getQuarters().get(quarterIdx);
         if (commentIdx < 0 || commentIdx >= quarter.comments().size()) {
             throw new IllegalArgumentException("Invalid comment index: " + commentIdx);
         }
+
+        // 해당 인덱스의 댓글을 제외한 새 리스트 생성
+        // 기존 댓글 리스트를 복사(기존 댓글을 지우기전 복사)
+        List<CommentJson> copyComments = new ArrayList<>(quarter.comments());
+        // 복사본에서 원하는 댓글을 찾아 삭제
+        copyComments.remove(commentIdx); // commentIdx가 int이므로 인덱스 기준 삭제
+
+        // 새로운 QuarterJson 생성
+        // 댓글만 새걸로 교체(record 는 set 이 불가능하기 때문에 아예 새롭게 교체가 필요함)
+        QuarterJson updatedQuarter = new QuarterJson(
+                quarter.id(),
+                quarter.label(),
+                quarter.players(),
+                copyComments,
+                quarter.scenarios(),
+                quarter.formations()
+        );
+
+        // quarters 전체를 새 리스트로 교체하고 저장
+        // 쿼터 리스트도 복사
+        List<QuarterJson> updatedQuarters = new ArrayList<>(lineUpEntity.getQuarters());
+        // 쿼터 리스트에서 해당 쿼터를 새로 만든 쿼터로 교체
+        updatedQuarters.set(quarterIdx, updatedQuarter);
+        // 엔티티한테 변경 요청
+        lineUpEntity.updateQuarters(updatedQuarters);
+        // 저장
+        // 위에서까지는 다 자바 객체에서만 바뀐거고 , save() 를 통해 db 에 upadte 를 한다.
+        // 사실 없어도 더티체킹으로 db 에 jpa 가 반영해줌
+        lineUpRepository.save(lineUpEntity);
+    }
+
+    private void validateOwner(String deviceId, LineUpEntity lineUpEntity) {
+        if (!lineUpEntity.getOwnerId().equals(deviceId)) {
+            throw ForbiddenException.notOwner();
+        }
+    }
+
+    private LineUpEntity findEntityOrThrow(String id) {
+        return lineUpRepository.findById(id)
+                .orElseThrow(() -> NotFoundException.lineup(id));
     }
 
 }
